@@ -8,10 +8,8 @@
 /vendor_boot         emmc		/dev/block/bootdevice/by-name/vendor_boot	       flags=backup=1;flashimg=1;display="Vendor Boot"
 
 /system_dlkm         erofs		/dev/block/bootdevice/by-name/system_dlkm          flags=display="System DLKM"
-
 /cache               ext4		/dev/block/bootdevice/by-name/cache
-/efs                 ext4		/dev/block/bootdevice/by-name/efs                  flags=backup=1;display="EFS"
-/sec_efs             ext4		/dev/block/bootdevice/by-name/sec_efs              flags=backup=1;display="Sec EFS"
+/efs                 ext4		/dev/block/bootdevice/by-name/sec_efs                  flags=backup=1;display="EFS"
 
 /omr                 ext4       /dev/block/bootdevice/by-name/omr                  flags=wipeingui;display="OMR"
 /optics              ext4       /dev/block/bootdevice/by-name/optics               flags=wipeingui;display="Optics"

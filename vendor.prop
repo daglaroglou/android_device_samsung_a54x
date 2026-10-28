@@ -2,3 +2,8 @@
 ro.security.keystore.keytype=sakv2,gak,rkp
 ro.hardware.keystore=mdfpp
 ro.hardware.keystore_desede=true
+
+# Security patch level (debe coincidir con el del stock real para que Keymint
+# calcule el mismo Root of Trust que se usó al crear la llave de /data)
+ro.build.version.security_patch=2025-04-01
+ro.vendor.build.security_patch=2025-04-01
