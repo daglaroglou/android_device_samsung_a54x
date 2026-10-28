@@ -1,0 +1,7 @@
+service fabric_crypto /system/bin/fabric_crypto /data/misc/fabric_crypto
+    class main
+    user system
+    group system log 5666 5678
+
+on boot
+    mkdir /data/misc/fabric_crypto 0770 system system

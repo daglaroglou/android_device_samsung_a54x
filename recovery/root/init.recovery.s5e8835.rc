@@ -2,6 +2,9 @@ import /init.recovery.teegris.rc
 
 on early-init
     mkdir /mnt/vendor/efs 0771 radio system
+    # Ensure the mount point exists before mounting the writable TA staging area.
+    mkdir /vendor/tee 0755 root root
+    mount tmpfs tmpfs /vendor/tee mode=0755
     start extract_ta
 
 on fs

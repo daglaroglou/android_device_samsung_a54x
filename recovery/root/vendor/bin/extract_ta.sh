@@ -1,71 +1,110 @@
 #!/sbin/sh
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#	  http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+# Copy the A35's TEEGRIS trustlets from the read-only vendor partition
+# into the recovery-only /vendor/tee tmpfs. Never report crypto.ready=1
+# unless every required trustlet was copied successfully.
 
-while ! test -e "/dev/block/mapper/vendor";
-do
-  sleep 1;
-done;
+log_error() {
+  echo "extract_ta: $*" > /dev/kmsg 2>/dev/null || true
+}
 
-mkdir -p "/tmp/vendor";
-if mount -o ro "/dev/block/mapper/vendor" "/tmp/vendor"; then
-  mkdir -m 755 "/vendor/tee";
-  mkdir -m 755 "/vendor/tee/driver";
+attempt=0
+while [ ! -e "/dev/block/mapper/vendor" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 60 ]; then
+    log_error "Timed out waiting for /dev/block/mapper/vendor"
+    setprop "crypto.ready" "0"
+    exit 1
+  fi
+  sleep 1
+done
 
-  model=$(getprop "ro.boot.em.model")
-  
-  case "$model" in
-    "SM-A546E")
-      if [ -d "/tmp/vendor/tee_sea" ]; then
-        tee_dir="/tmp/vendor/tee_sea"
-      else
-        tee_dir="/tmp/vendor/tee"
-      fi
-      ;;
-    "SM-A546B")
-      if [ -d "/tmp/vendor/tee_eur" ]; then
-        tee_dir="/tmp/vendor/tee_eur"
-      else
-        tee_dir="/tmp/vendor/tee"
-      fi
-      ;;
-    *)
-      tee_dir="/tmp/vendor/tee"
-      ;;
-  esac
+mkdir -p "/tmp/vendor" || {
+  log_error "Could not create /tmp/vendor"
+  setprop "crypto.ready" "0"
+  exit 1
+}
 
-  # Crypto Manager Driver
-  cp -p "$tee_dir/driver/00000000-0000-0000-0000-53626f786476" \
-    "/vendor/tee/driver/00000000-0000-0000-0000-53626f786476";
-  # ICCC Driver
-  cp -p "$tee_dir/driver/00000000-0000-0000-0000-494363447256" \
-    "/vendor/tee/driver/00000000-0000-0000-0000-494363447256";
-  # KeyMint TA
-  cp -p "$tee_dir/00000000-0000-0000-0000-4b45594d5354" \
-    "/vendor/tee/00000000-0000-0000-0000-4b45594d5354";
-  # TZ_ICCC TA
-  cp -p "$tee_dir/00000000-0000-0000-0000-0053545354ab" \
-    "/vendor/tee/00000000-0000-0000-0000-0053545354ab";
-  # Gatekeeper TA
-  cp -p "$tee_dir/00000000-0000-0000-0000-474154454b45" \
-    "/vendor/tee/00000000-0000-0000-0000-474154454b45";
-
-  umount "/tmp/vendor";
+if ! mount -o ro "/dev/block/mapper/vendor" "/tmp/vendor"; then
+  log_error "Could not mount vendor read-only"
+  rmdir "/tmp/vendor" 2>/dev/null || true
+  setprop "crypto.ready" "0"
+  exit 1
 fi
 
-rm -r "/tmp/vendor";
+model="$(getprop "ro.boot.em.model")"
+case "$model" in
+  "SM-A546E")
+    if [ -d "/tmp/vendor/tee_sea" ]; then
+      tee_dir="/tmp/vendor/tee_sea"
+    else
+      tee_dir="/tmp/vendor/tee"
+    fi
+    ;;
+  "SM-A546B")
+    if [ -d "/tmp/vendor/tee_eur" ]; then
+      tee_dir="/tmp/vendor/tee_eur"
+    else
+      tee_dir="/tmp/vendor/tee"
+    fi
+    ;;
+  *)
+    tee_dir="/tmp/vendor/tee"
+    ;;
+esac
 
-setprop "crypto.ready" "1";
+copy_ta() {
+  source_file="$1"
+  destination_file="$2"
 
-exit 0;
+  if [ ! -f "$source_file" ]; then
+    log_error "Required TA file is missing: $source_file"
+    return 1
+  fi
+
+  if ! cp -p "$source_file" "$destination_file"; then
+    log_error "Could not copy TA file: $source_file"
+    return 1
+  fi
+
+  return 0
+}
+
+status=0
+if ! mkdir -p "/vendor/tee/driver"; then
+  log_error "Could not create /vendor/tee/driver; is the TEE tmpfs mounted?"
+  status=1
+fi
+
+if [ "$status" -eq 0 ]; then
+  # Crypto Manager Driver
+  copy_ta "$tee_dir/driver/00000000-0000-0000-0000-53626f786476" \
+    "/vendor/tee/driver/00000000-0000-0000-0000-53626f786476" || status=1
+  # ICCC Driver
+  copy_ta "$tee_dir/driver/00000000-0000-0000-0000-494363447256" \
+    "/vendor/tee/driver/00000000-0000-0000-0000-494363447256" || status=1
+  # KeyMint TA
+  copy_ta "$tee_dir/00000000-0000-0000-0000-4b45594d5354" \
+    "/vendor/tee/00000000-0000-0000-0000-4b45594d5354" || status=1
+  # TZ_ICCC TA
+  copy_ta "$tee_dir/00000000-0000-0000-0000-0053545354ab" \
+    "/vendor/tee/00000000-0000-0000-0000-0053545354ab" || status=1
+  # Gatekeeper TA
+  copy_ta "$tee_dir/00000000-0000-0000-0000-474154454b45" \
+    "/vendor/tee/00000000-0000-0000-0000-474154454b45" || status=1
+fi
+
+if ! umount "/tmp/vendor"; then
+  log_error "Could not unmount temporary vendor mount"
+  status=1
+fi
+rm -rf "/tmp/vendor"
+
+if [ "$status" -ne 0 ]; then
+  # Do not start KeyMint against a partial trustlet set.
+  setprop "crypto.ready" "0"
+  exit 1
+fi
+
+setprop "crypto.ready" "1"
+exit 0

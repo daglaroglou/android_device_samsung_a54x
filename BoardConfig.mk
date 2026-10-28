@@ -5,6 +5,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+DEVICE_PATH := device/samsung/a35x
+
 # Architecture
 TARGET_ARCH := arm64
 TARGET_ARCH_VARIANT := armv8-a-branchprot
@@ -26,28 +28,32 @@ TARGET_NO_BOOTLOADER := true
 TARGET_BOARD_PLATFORM := $(PRODUCT_PLATFORM)
 
 # Kernel
-BOARD_CUSTOM_BOOTIMG_MK := $(DEVICE_PATH)/mkbootimg.mk
-
 TARGET_KERNEL_ARCH := $(TARGET_ARCH)
 BOARD_KERNEL_IMAGE_NAME := Image
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/$(BOARD_KERNEL_IMAGE_NAME)
+TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
 BOARD_INCLUDE_RECOVERY_DTBO := true
 BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
 BOARD_RAMDISK_USE_LZ4 := true
 
-BOARD_KERNEL_CMDLINE := \
-    bootconfig \
-    buildtime_bootconfig=enable \
-    loop.max_part=7
+BOARD_BOOT_HEADER_VERSION := 2
+BOARD_KERNEL_BASE := 0x10000000
+BOARD_KERNEL_CMDLINE := bootconfig buildtime_bootconfig=enable loop.max_part=7
 BOARD_KERNEL_PAGESIZE := 4096
-BOARD_MKBOOTIMG_ARGS := \
-    --dtb $(DEVICE_PATH)/prebuilt/dtb \
-    --ramdisk_offset 0 \
-    --dtb_offset 0 \
-    --os_version 13.0.0 \
-    --tags_offset 0 \
-    --board SRPVI13A001 \
-    --header_version 2
+BOARD_KERNEL_OFFSET := 0x00008000
+BOARD_RAMDISK_OFFSET := 0x00000000
+BOARD_KERNEL_TAGS_OFFSET := 0x00000000
+BOARD_DTB_OFFSET := 0x00000000
+
+BOARD_MKBOOTIMG_ARGS := --kernel_offset $(BOARD_KERNEL_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --ramdisk_offset $(BOARD_RAMDISK_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --tags_offset $(BOARD_KERNEL_TAGS_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --header_version $(BOARD_BOOT_HEADER_VERSION)
+BOARD_MKBOOTIMG_ARGS += --pagesize $(BOARD_KERNEL_PAGESIZE)
+BOARD_MKBOOTIMG_ARGS += --board "SRPWK02A003"
+BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
+BOARD_MKBOOTIMG_ARGS += --dtb_offset $(BOARD_DTB_OFFSET)
+
 BOARD_ROOT_EXTRA_FOLDERS := \
     carrier \
     efs \
@@ -66,10 +72,9 @@ BOARD_AVB_ENABLE := false
 TARGET_VENDOR_PROP += $(DEVICE_PATH)/vendor.prop
 
 # Partitions
-BOARD_FLASH_BLOCK_SIZE := 4096
+BOARD_FLASH_BLOCK_SIZE := 262144
 BOARD_BOOTIMAGE_PARTITION_SIZE := 67108864
 BOARD_DTBOIMG_PARTITION_SIZE := 8388608
-#BOARD_INIT_BOOT_IMAGE_PARTITION_SIZE := 16777216
 BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 33554432
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 100663296
 
@@ -80,7 +85,7 @@ TARGET_USERIMAGES_USE_F2FS := true
 BOARD_SUPER_PARTITION_SIZE := 11429478400
 BOARD_SUPER_PARTITION_GROUPS := group_basic
 BOARD_GROUP_BASIC_SIZE := 11425284096
-BOARD_GROUP_BASIC_PARTITION_LIST := system odm product vendor vendor_dlkm # TODO system_dlkm
+BOARD_GROUP_BASIC_PARTITION_LIST := system odm product vendor vendor_dlkm
 
 BOARD_PARTITION_LIST := $(call to-upper, $(BOARD_GROUP_BASIC_PARTITION_LIST))
 $(foreach p, $(BOARD_PARTITION_LIST), $(eval BOARD_$(p)IMAGE_FILE_SYSTEM_TYPE := erofs))
@@ -92,7 +97,8 @@ PLATFORM_VERSION := 99.87.36
 PLATFORM_VERSION_LAST_STABLE := $(PLATFORM_VERSION)
 PLATFORM_SECURITY_PATCH := 2099-12-31
 BOOT_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
-VENDOR_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
+# Must match the stock A35 vendor firmware used for encrypted /data.
+VENDOR_SECURITY_PATCH := 2025-04-01
 
 # Recovery
 TARGET_RECOVERY_PIXEL_FORMAT := RGBX_8888
@@ -112,23 +118,46 @@ TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
 TW_USE_SERIALNO_PROPERTY_FOR_DEVICE_ID := true
 TW_BACKUP_EXCLUSIONS := /data/fonts/files
-TW_EXTRA_LANGUAGES := true
+# Keep only the default recovery language to reduce recovery.img size.
+# Enable TW_EXTRA_LANGUAGES again only if the image fits the recovery partition.
+# TW_EXTRA_LANGUAGES := true
 TW_EXCLUDE_APEX := true
 TW_NO_EXFAT_FUSE := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true
 TW_INCLUDE_CRYPTO := true
-TW_FORCE_KEYMASTER_VER := true
+TW_FORCE_KEYMASTER_VER := false
 TW_ENABLE_FS_COMPRESSION := true
-TW_INCLUDE_NTFS_3G := true
+# Optional filesystem support removed to reduce recovery.img size.
+# TW_INCLUDE_NTFS_3G := true
 TW_INCLUDE_RESETPROP := true
-TW_INCLUDE_REPACKTOOLS := true
+TW_INCLUDE_REPACKTOOLS := true # Required by postrecoveryboot.sh (magiskboot)
 TW_INCLUDE_LPDUMP := true
 TW_INCLUDE_LPTOOLS := true
 
-# Change status bar layout
-TW_USE_NEW_STATUSBAR := true
-TW_STATUS_ICONS_ALIGN := center
-TW_CUSTOM_CPU_POS := 250
-TW_CUSTOM_CLOCK_POS := 50
-TW_CUSTOM_BATTERY_POS := 810
-TW_STATUS_HEIGHT := 70
+# SHRP specific
+SHRP_DEVICE_CODE := a35x
+SHRP_PATH := device/samsung/$(SHRP_DEVICE_CODE)
+SHRP_MAINTAINER := ChristyGaming18
+SHRP_REC_TYPE := Treble
+SHRP_DEVICE_TYPE := A/B
+SHRP_REC := "/dev/block/bootdevice/by-name/recovery"
+SHRP_HAS_RECOVERY_PARTITION := true
+SHRP_AB := true
+SHRP_EDL_MODE := 1
+SHRP_INTERNAL := "/sdcard"
+SHRP_EXTERNAL := "/external_sd"
+SHRP_OTG := "/usb_otg"
+SHRP_FLASH := 1
+SHRP_STATUSBAR_RIGHT_PADDING := 58
+SHRP_STATUSBAR_LEFT_PADDING := 58
+SHRP_NOTCH := true
+SHRP_EXPRESS := true
+SHRP_EXPRESS_USE_DATA := true
+SHRP_DARK := true
+SHRP_CUSTOM_FLASHLIGHT := true
+SHRP_FONP_1 := "/sys/devices/virtual/camera/flash/rear_flash"
+SHRP_FLASH_MAX_BRIGHTNESS := 200
+
+# Identidad de la versión mostrada en la UI (Android.mk del core hace:
+# -DTW_DEVICE_VERSION='"-$(TW_DEVICE_VERSION)"' -> queda "<base>-ChristyGaming18")
+TW_DEVICE_VERSION := ChristyGaming18

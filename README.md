@@ -1,5 +1,5 @@
 # TWRP Device Tree for Samsung Galaxy A54 5G
-
+# This recovery has encryption, it asks us for our screen password to be able to access the data partition, so it works 100%, proof that it boots on a35x.
 The Galaxy A54 5G (codenamed _"a54x"_) is an upper-mid-range smartphone from Samsung.
 
 It was announced and released in March 2023.
@@ -71,3 +71,28 @@ mka recoveryimage
 # limitations under the License.
 #
 ```
+
+## Notas de mantenimiento — fix del kernel (jul 2026)
+
+`prebuilt/Image` traía un kernel custom (`5.15.153-twrp+`, build de ravindu644) cuyo `vermagic` **no coincidía** con los 291 módulos .ko en `recovery/root/lib/modules/` (compilados como `5.15.153-android13-3-31153516`). Resultado: ningún módulo cargaba — ni `exynos-drm.ko`/`mcd-panel*.ko` (pantalla) ni `ufs-exynos-core.ko`/`dw_mmc*.ko` (storage) — y el recovery se quedaba pegado en el logo porque la UI nunca lograba pintar sobre el splash del kernel.
+
+**Fix aplicado:** se reemplazó `prebuilt/Image` por el kernel extraído del recovery stock del A35x (`Linux version 5.15.153-android13-3-31153516`), que coincide exacto con el vermagic de los módulos ya presentes. `prebuilt/dtb.img` y `prebuilt/dtbo.img` **no se tocaron** — ya eran idénticos, byte a byte, a los del stock. El kernel roto original queda respaldado en `prebuilt/Image.broken-twrp-kernel.bak` (bórralo cuando ya no lo necesites).
+
+**Qué revisar cuando actualices la base (nueva versión de firmware / nuevos módulos):**
+
+1. Extrae el kernel del nuevo `recovery.img` (o `vendor_boot.img`) stock correspondiente a la nueva base.
+2. Compara su string de versión (`strings Image | grep "Linux version"`) contra el `vermagic=` de los módulos nuevos en `recovery/root/lib/modules/*.ko` (`strings modulo.ko | grep vermagic`).
+3. Si coinciden exacto, reemplaza `prebuilt/Image` con ese kernel — así te aseguras de que los módulos vuelvan a cargar.
+4. Si NO coinciden (por ejemplo si decides usar un kernel custom de nuevo, como el de ravindu644/BlackMesa123), vas a necesitar recompilar tú mismo los módulos contra ESE kernel source, o extraer los módulos del stock que corresponda a ese kernel — no mezcles kernel y módulos de dos compilaciones distintas.
+5. Repite la comparación de `dtb.img`/`dtbo.img` contra el stock nuevo — si tu placa/hardware no cambió de revisión, normalmente siguen siendo idénticos y no hace falta tocarlos.
+
+Kernel source de referencia (si algún día quieres compilar el kernel tú mismo en vez de usar un prebuilt): [BlackMesa123/android_kernel_samsung_s5e8835](https://github.com/BlackMesa123/android_kernel_samsung_s5e8835/tree/sep-15/twrp-12.1)
+
+## Notas de mantenimiento — particiones Samsung ODE (jul 2026)
+
+Tras el fix del kernel, `/data` fallaba al montar (`Could not mount /data and unable to find crypto footer`). Comparando contra `system/etc/recovery.fstab` del recovery stock, se detectó que `recovery.fstab` de este device tree no declaraba las particiones `/keydata` y `/keyrefuge` (esquema propio de Samsung de manejo de llaves — "Samsung ODE" — separado del FBE estándar de AOSP que usa `/metadata/vold/metadata_encryption`). Se agregaron ambas entradas calcando el stock.
+
+**Esto es un fix parcial, no confirmado en hardware todavía.** Sigue pendiente por investigar/probar:
+- Si el mount de `/data` (y de las particiones lógicas `system`/`vendor`/`product`/etc.) funciona ahora que los 291 módulos cargan con el kernel correcto — pedir `ls -la /dev/block/by-name/` y `dmesg | grep -iE "ufs|mmc|block"` desde `adb shell` en recovery para confirmar qué nodos de bloque existen realmente.
+- Si el TA de Keymint (`extract_ta.sh` / `init.recovery.teegris.rc`) logra desenvolver la llave hardware-wrapped para el esquema ODE de Samsung — esto es standard AOSP FBE en el fstab, pero Samsung puede requerir lógica adicional en vold que TWRP/SHRP no trae de fábrica.
+- `BOARD_GROUP_BASIC_PARTITION_LIST` en BoardConfig.mk no incluye `system_dlkm` aunque sí aparece como partición lógica en el fstab — revisar si hace falta agregarla.

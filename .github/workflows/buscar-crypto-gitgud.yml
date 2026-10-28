@@ -1,0 +1,64 @@
+name: Buscar crypto del gitgud y probar en device tree
+
+# Workflow de un solo uso: clona el dump de gitgud, busca dentro de el
+# todo lo relacionado a cifrado/TEE/keymaster/gatekeeper por nombre de
+# archivo, y copia SOLO esas coincidencias (con su misma ruta relativa)
+# a recovery/root/ en una rama nueva de prueba del device tree de
+# recovery -- shrp-12.1 no se toca, esto es exclusivamente para probar.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  buscar-y-probar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar dump de gitgud
+        run: |
+          rm -rf /tmp/gitgud_dump
+          git clone --depth=1 https://gitgud.io/Van-Firmware-Dumps/samsung/a35x.git /tmp/gitgud_dump
+
+      - name: Buscar archivos relacionados a crypto/TEE/keymaster/gatekeeper
+        run: |
+          mkdir -p /tmp/crypto_found
+          cd /tmp/gitgud_dump
+          PATTERN='keymaster|keymint|gatekeeper|trustonic|tzdaemon|tzts|teegris|extract_ta|keystore|vold|fbe|defaultkey|metadata_encrypt|synth|crypt'
+          find . -type f | grep -Ei "${PATTERN}" > /tmp/matches.txt || true
+          MATCH_COUNT=$(wc -l < /tmp/matches.txt)
+          echo "=== Coincidencias encontradas (${MATCH_COUNT}) ==="
+          cat /tmp/matches.txt
+          while IFS= read -r f; do
+            rel="${f#./}"
+            mkdir -p "/tmp/crypto_found/$(dirname "${rel}")"
+            cp "${f}" "/tmp/crypto_found/${rel}"
+          done < /tmp/matches.txt
+
+      - name: Preparar rama de prueba en el device tree de recovery
+        run: |
+          rm -rf /tmp/dt_repo
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/christiandroid20/shrp_device_samsung_a35x.git" /tmp/dt_repo
+          cd /tmp/dt_repo
+          git checkout shrp-12.1
+          git checkout -b gitgud-crypto-test
+
+      - name: Copiar coincidencias a recovery/root/ (misma estructura)
+        run: |
+          mkdir -p /tmp/dt_repo/recovery/root
+          cd /tmp/crypto_found
+          tar -cf - . | (cd /tmp/dt_repo/recovery/root && tar -xf -)
+
+      - name: Commit y push a gitgud-crypto-test
+        run: |
+          cd /tmp/dt_repo
+          git config user.email "actions@github.com"
+          git config user.name "gitgud-crypto-bot"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No se encontró nada que coincidiera -- nada que commitear."
+            exit 0
+          fi
+          git commit -m "Prueba: archivos de crypto/TEE/keymaster encontrados en el dump de gitgud, sobre shrp-12.1"
+          git push origin gitgud-crypto-test --force
